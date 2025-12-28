@@ -129,9 +129,6 @@ int main (...) {
   /* now it's time to clean up */
   FFMS_DestroyVideoSource(videosource);
 
-  /* uninitialize the library. */
-  FFMS_Deinit();
-
   return 0;
 }
 ```
@@ -202,16 +199,6 @@ This argument is no longer used and is left only for API/ABI compatibility. Pass
 ##### `int Unused2`
 
 This argument is also no longer used and is left only for API/ABI compatibility. Pass 0.
-
-### FFMS_Deinit - deinitializes the library
-
-[Deinit]: ##ffms_deinit---deinitializes-the-library
-```c++
-void FFMS_Deinit()
-```
-Deinitializes the FFMS2 library.
-This function must be called once at the end of your program, and no more FFMS2 function calls must be made.
-This function is threadsafe and will only be run once.
 
 ### FFMS_GetLogLevel - gets FFmpeg message level
 
@@ -500,7 +487,7 @@ Resets the input format for the given `FFMS_VideoSource` object to the values sp
 
 [DestroyIndex]: #ffms_destroyindex---deallocates-an-index-object
 ```c++
-void FFMS_DestroyFFMS_Index(FFMS_Index *Index);
+void FFMS_DestroyIndex(FFMS_Index *Index);
 ```
 Deallocates the given `FFMS_Index` object and frees the memory that was allocated when it was created.
 
@@ -1065,6 +1052,7 @@ typedef struct {
   unsigned int ContentLightLevelMax;
   unsigned int ContentLightLevelAverage;
   int Flip;
+  int64_t LastEndPTS;
 } FFMS_VideoProperties;
 ```
 A struct containing metadata about a video track.
@@ -1094,7 +1082,7 @@ The fields are:
  - `int Rotation;` - The rotation of the video, in degrees.
  - `int Stereo3DType;` - The type of stereo 3D the video is. Corresponts to entries in [FFMS_Stereo3DType][Stereo3DType].
  - `int Stereo3DFlags;` - Stereo 3D flags. Corresponds to entries in [FFMS_Stereo3DFlags][Stereo3DFlags].
- - `double LastEndTime;` - The end time of the last packet of the stream, in milliseconds.
+ - `double LastEndTime;` - The end time of the last packet of the stream, in seconds.
  - `int HasMasteringDisplayPrimaries;` - If this is non-zero, the following four properties are set.
  - `double MasteringDisplayPrimariesX[3];` - RGB chromaticy coordinates of the mastering display (x coord).
  - `double MasteringDisplayPrimariesY[3];` - RGB chromaticy coordinates of the mastering display (y coord).
@@ -1107,6 +1095,7 @@ The fields are:
  - `unsigned int ContentLightLevelMax;` - Maximum content luminance (cd/m^2).
  - `unsigned int ContentLightLevelAverage;` - Average content luminance (cd/m^2).
  - `int Flip;` - Flip direction to be applied *before* rotation: 0 for no operation, >0 for horizontal flip, <0 for vertical flip.
+ - `int64_t LastEndPTS;` - The end PTS of the last packet of the stream.
 
 ### FFMS_AudioProperties
 

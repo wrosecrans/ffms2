@@ -39,8 +39,6 @@ extern "C" {
 #endif
 
 static std::once_flag FFmpegOnce;
-static std::mutex FFmpegNetwork;
-static bool FFmpegNetworkInited = false;
 
 #ifdef FFMS_WIN_DEBUG
 
@@ -80,7 +78,6 @@ static void av_log_windebug_callback(void* ptr, int level, const char* fmt, va_l
 
 FFMS_API(void) FFMS_Init(int, int) {
     std::call_once(FFmpegOnce, []() {
-        FFMS_REGISTER();
 #ifdef FFMS_WIN_DEBUG
         av_log_set_callback(av_log_windebug_callback);
         av_log_set_level(AV_LOG_INFO);
@@ -88,21 +85,6 @@ FFMS_API(void) FFMS_Init(int, int) {
         av_log_set_level(AV_LOG_QUIET);
 #endif
     });
-    FFmpegNetwork.lock();
-    if (!FFmpegNetworkInited) {
-        avformat_network_init();
-        FFmpegNetworkInited = true;
-    }
-    FFmpegNetwork.unlock();
-}
-
-FFMS_API(void) FFMS_Deinit() {
-    FFmpegNetwork.lock();
-    if (FFmpegNetworkInited) {
-        avformat_network_deinit();
-        FFmpegNetworkInited = false;
-    }
-    FFmpegNetwork.unlock();
 }
 
 FFMS_API(int) FFMS_GetVersion() {
@@ -127,8 +109,12 @@ FFMS_API(FFMS_VideoSource *) FFMS_CreateVideoSource(const char *SourceFile, int 
 }
 
 FFMS_API(FFMS_AudioSource *) FFMS_CreateAudioSource(const char *SourceFile, int Track, FFMS_Index *Index, int DelayMode, FFMS_ErrorInfo *ErrorInfo) {
+    return FFMS_CreateAudioSource2(SourceFile, Track, Index, DelayMode, -1, 0, ErrorInfo);
+}
+
+FFMS_API(FFMS_AudioSource *) FFMS_CreateAudioSource2(const char *SourceFile, int Track, FFMS_Index *Index, int DelayMode, int FillGaps, double DrcScale, FFMS_ErrorInfo *ErrorInfo) {
     try {
-            return new FFMS_AudioSource(SourceFile, *Index, Track, DelayMode);
+        return new FFMS_AudioSource(SourceFile, *Index, Track, DelayMode, FillGaps, DrcScale);
     } catch (FFMS_Exception &e) {
         e.CopyOut(ErrorInfo);
         return nullptr;
@@ -319,9 +305,13 @@ FFMS_API(int) FFMS_WriteTimecodes(FFMS_Track *T, const char *TimecodeFile, FFMS_
 }
 
 FFMS_API(FFMS_Indexer *) FFMS_CreateIndexer(const char *SourceFile, FFMS_ErrorInfo *ErrorInfo) {
+    return FFMS_CreateIndexer2(SourceFile, nullptr, 0, ErrorInfo);
+}
+
+FFMS_API(FFMS_Indexer *) FFMS_CreateIndexer2(const char *SourceFile, const FFMS_KeyValuePair *DemuxerOptions, int NumOptions, FFMS_ErrorInfo *ErrorInfo) {
     ClearErrorInfo(ErrorInfo);
     try {
-        return new FFMS_Indexer(SourceFile);
+        return new FFMS_Indexer(SourceFile, DemuxerOptions, NumOptions);
     } catch (FFMS_Exception &e) {
         e.CopyOut(ErrorInfo);
         return nullptr;

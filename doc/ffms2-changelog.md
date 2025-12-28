@@ -1,6 +1,34 @@
 # FFmpegSource2 Changelog
+- 5.1
+  - FFmpeg 7.1 is now the minimum requirement.
+  - Added layered decoding support, for e.g. spatial MV-HEVC.
+  - Added LastEndPTS to FFMS_VideoProperties. This field is the equivalent of LastEndTime, but it is expressed in the video timebase.
 
-- 2.2000
+- 5.0
+  - Fixed all issues with FFmpeg 6.1 which is now the minimum requirement
+  - Fixed av1 decoding
+  - Fixed TFF material when rffmode is used
+  - Added HDR10+ and DolbyVision metadata
+  - Fixed audio decoding that could otherwise get stuck in an infinite loop on certain files
+  - Fixed framerate in Avisynth when using VFR=>CFR mode
+  - Dropped VapourSynth API3 support
+  - Indexer now has a configurable progress update interval
+  - Alpha planes are now correctly marked as being full range
+  - The full set of demuxer options can now be passed using the FFMS2 API
+  - Now sets channel layout in Avisynth+
+  - Removed the unfixable and always broken rffmode from Avisynth source
+  
+- 2.3000
+  - Added support for VapourSynth API4 (Myrsloik)
+  - Added basic Avisynth+ frame property support (Myrsloik)
+  - Added Rotation and Flip properties for VapourSynth (Myrsloik)
+  - Added long path support for ffmsindex in windows (Myrsloik)
+  - The audio gap fill logic is now optional and usually disabled by default (Myrsloik)
+  - Allow the drc_scale option to be set when decoding audio (Myrsloik)
+  - Allow the enable_drefs and use_absolute_path demuxer options to be used when indexing (Myrsloik)
+
+- 2.40
+  - Avisynth+ linux support (qyot27)
   - Added LastEndTime track property to make it possible to take the last frame's duration into account (Myrsloik)
   - Removed several deprecated functions and enums from the API (Myrsloik)
   - No longer assumes sub 1 fps framerates are invalid (Myrsloik)

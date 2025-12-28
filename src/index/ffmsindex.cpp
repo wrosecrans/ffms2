@@ -34,6 +34,11 @@
 #include <vector>
 #include <string>
 #include <stdexcept>
+#include <chrono>
+
+extern "C" {
+#include <libavutil/dict.h>
+}
 
 namespace {
 
@@ -44,6 +49,8 @@ bool Overwrite = false;
 bool PrintProgress = true;
 bool WriteTC = false;
 bool WriteKF = false;
+int64_t ProgressInterval = 1000000; // One second
+std::vector<FFMS_KeyValuePair> LAVFOpts;
 std::string InputFile;
 std::string CacheFile;
 
@@ -53,6 +60,11 @@ struct Error {
     Error(const char *msg, FFMS_ErrorInfo const& e) : msg(msg) {
         this->msg.append(e.Buffer);
     }
+};
+
+struct Progress {
+    int Percent;
+    int64_t Time;
 };
 
 void PrintUsage() {
@@ -69,7 +81,58 @@ void PrintUsage() {
         "-k        Write keyframes for all video tracks to outputfile_track00.kf.txt (default: no)\n"
         "-t N      Set the audio indexing mask to N (-1 means index all tracks, 0 means index none, default: 0)\n"
         "-s N      Set audio decoding error handling. See the documentation for details. (default: 0)\n"
+        "-u N      Set the progress update frequency in seconds. Set to 0 for every percent. (default: 1)\n"
+        "-o string Set demuxer options to be used in the form of 'key=val:key=val'. (default: none)\n"
+        "\n"
+        "FFmpeg Demuxer Options:\n"
+        "--enable_drefs\n"
+        "--use_absolute_path\n"
         << std::endl;
+}
+
+int64_t getTimeInMicroSeconds() {
+    static std::chrono::time_point<std::chrono::steady_clock> StartTime = std::chrono::steady_clock::now();
+    std::chrono::time_point<std::chrono::steady_clock> Now = std::chrono::steady_clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(Now - StartTime).count();
+}
+
+int64_t parseSecondsToMicroseconds(const char *str) {
+    double val = std::strtod(str, nullptr);
+    int64_t ret = (int64_t) (val * 1000000.0);
+    return ret;
+}
+
+void freeDemuxerOpts() {
+    for (FFMS_KeyValuePair pair : LAVFOpts) {
+        free(const_cast<char *>(pair.Key));
+        free(const_cast<char *>(pair.Value));
+    }
+    LAVFOpts.clear();
+}
+
+std::vector<FFMS_KeyValuePair> parseDemuxerOpts(const char *str) {
+    AVDictionary *dict = nullptr;
+    int ret = av_dict_parse_string(&dict, str, "=", ":", 0);
+    if (ret < 0)
+        throw Error("Cannot parse demuxer options.");
+
+    AVDictionaryEntry *en = nullptr;
+    while ((en = av_dict_get(dict, "", en, AV_DICT_IGNORE_SUFFIX)) != NULL) {
+        FFMS_KeyValuePair pair;
+        pair.Key = strdup(en->key);
+        if (!pair.Key)
+            goto fail;
+        pair.Value = strdup(en->value);
+        if (!pair.Value) {
+            free(const_cast<char *>(pair.Key));
+            goto fail;
+        }
+        LAVFOpts.push_back(pair);
+    }
+    return LAVFOpts;
+fail:
+    freeDemuxerOpts();
+    throw Error("Could not allocate key/value pair.");
 }
 
 void ParseCMDLine(int argc, const char *argv[]) {
@@ -91,6 +154,14 @@ void ParseCMDLine(int argc, const char *argv[]) {
             OPTION_ARG(IndexMask, "t", std::stoll);
         } else if (!strcmp(Option, "-s")) {
             OPTION_ARG(IgnoreErrors, "s", std::stoi);
+        } else if (!strcmp(Option, "-u")) {
+            OPTION_ARG(ProgressInterval, "u", parseSecondsToMicroseconds);
+        } else if (!strcmp(Option, "-o")) {
+            OPTION_ARG(LAVFOpts, "o", parseDemuxerOpts);
+        } else if (!strcmp(Option, "--enable_drefs")) {
+            parseDemuxerOpts("enable_drefs=1");
+        } else if (!strcmp(Option, "--use_absolute_path")) {
+            parseDemuxerOpts("use_absolute_path=1");
         } else if (InputFile.empty()) {
             InputFile = Option;
         } else if (CacheFile.empty()) {
@@ -118,10 +189,12 @@ int FFMS_CC UpdateProgress(int64_t Current, int64_t Total, void *Private) {
     int Percentage = int((double(Current) / double(Total)) * 100);
 
     if (Private) {
-        int *LastPercentage = (int *)Private;
-        if (Percentage <= *LastPercentage)
+        Progress *LastProgress = (Progress *)Private;
+        int64_t CurTime = getTimeInMicroSeconds();
+        if (Percentage <= LastProgress->Percent || (LastProgress->Time != 0 && (CurTime - LastProgress->Time) <= ProgressInterval))
             return 0;
-        *LastPercentage = Percentage;
+        LastProgress->Percent = Percentage;
+        LastProgress->Time = CurTime;
     }
 
     std::cout << "Indexing, please wait... " << Percentage << "% \r" << std::flush;
@@ -144,7 +217,7 @@ void DoIndexing() {
     E.Buffer = ErrorMsg;
     E.BufferSize = sizeof(ErrorMsg);
 
-    int Progress = 0;
+    Progress ProgressTracker = { 0, getTimeInMicroSeconds() };
 
     FFMS_Index *Index = FFMS_ReadIndex(CacheFile.c_str(), &E);
     if (Index) {
@@ -154,11 +227,12 @@ void DoIndexing() {
     }
 
     UpdateProgress(0, 100, nullptr);
-    FFMS_Indexer *Indexer = FFMS_CreateIndexer(InputFile.c_str(), &E);
+
+    FFMS_Indexer *Indexer = FFMS_CreateIndexer2(InputFile.c_str(), LAVFOpts.data(), LAVFOpts.size(), &E);
     if (Indexer == nullptr)
         throw Error("\nFailed to initialize indexing: ", E);
 
-    FFMS_SetProgressCallback(Indexer, UpdateProgress, &Progress);
+    FFMS_SetProgressCallback(Indexer, UpdateProgress, &ProgressTracker);
 
     // Treat -1 as meaning track numbers above sizeof(long long) * 8 too, dumping implies indexing
     if (IndexMask == -1)
@@ -174,6 +248,8 @@ void DoIndexing() {
 
     // The indexer is always freed
     Indexer = nullptr;
+
+    freeDemuxerOpts();
 
     if (Index == nullptr)
         throw Error("\nIndexing error: ", E);
@@ -258,7 +334,7 @@ int main(int argc, const char *argv[]) {
 
         ParseCMDLine(argc, argv);
     } catch (Error const& e) {
-        std::cout << e.msg << std::endl;
+        std::cout << e.msg << std::endl << std::flush;
         return 1;
     }
 
@@ -275,11 +351,9 @@ int main(int argc, const char *argv[]) {
     try {
         DoIndexing();
     } catch (Error const& e) {
-        std::cout << e.msg << std::endl;
-        FFMS_Deinit();
+        std::cout << e.msg << std::endl << std::flush;
         return 1;
     }
 
-    FFMS_Deinit();
     return 0;
 }

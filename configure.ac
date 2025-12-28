@@ -6,7 +6,7 @@ AM_INIT_AUTOMAKE([1.11 subdir-objects])
 AM_SILENT_RULES([yes])
 AM_MAINTAINER_MODE([disable])
 
-VERSION_INFO="4:0:0"
+VERSION_INFO="5:1:1"
 
 AC_MSG_CHECKING([if debug build is enabled])
 
@@ -33,6 +33,16 @@ if test -z "$CXXFLAGS"; then
     CXXFLAGS="$OPT_FLAGS -Wall -Wextra"
 fi
 
+AC_ARG_ENABLE([avisynth],
+        [AC_HELP_STRING([--enable-avisynth],
+            [Enable AviSynth+ plugin. [default=no]])],
+        [enable_avisynth=yes],
+        [enable_avisynth=no]
+        )
+
+AC_MSG_RESULT([$enable_avisynth])
+AM_CONDITIONAL([AVISYNTH], [test "x$enable_avisynth" != "xno"])
+
 AC_CONFIG_HEADERS([src/config/config.h])
 AC_PROG_CC
 AC_PROG_CXX
@@ -47,6 +57,8 @@ AS_CASE([$host],
          ], [
             AC_ENABLE_SHARED
             AC_DISABLE_STATIC])
+
+AM_CONDITIONAL([WINDOWS], [case "$host_os" in mingw* | cygwin*) true ;; *) false ;; esac])
 
 AC_PROG_LIBTOOL
 
@@ -78,7 +90,7 @@ PKG_PROG_PKG_CONFIG([0.22])
 pkgconfigdir="\$(libdir)/pkgconfig"
 AC_SUBST(pkgconfigdir)
 
-PKG_CHECK_MODULES(FFMPEG, [libavformat >= 53.20.0 libavcodec >= 53.24.0 libswscale >= 0.7.0 libavutil >= 51.21.0 libswresample >= 1.0.0])
+PKG_CHECK_MODULES(FFMPEG, [libavformat >= 61.7.0 libavcodec >= 61.19.0 libswscale >= 8.3.0 libavutil >= 59.39.0 libswresample >= 5.3.0])
 
 dnl As of 0eec06ed8747923faa6a98e474f224d922dc487d ffmpeg only adds -lrt to lavc's
 dnl LIBS, but lavu needs it, so move it to the end if it's present
@@ -92,10 +104,10 @@ CFLAGS="$_CFLAGS $FFMPEG_CFLAGS"
 
 AC_DEFUN([TEST_FFMPEG],
          [AC_LINK_IFELSE([AC_LANG_PROGRAM([[
-            #include <libavcodec/avcodec.h>
+            #include <libavformat/avformat.h>
             #include <libswscale/swscale.h>
             ]],[[
-                avcodec_register_all();
+                avformat_network_init();
                 swscale_version();
             ]])], [eval $1=yes], [eval $1=no])
         ])
@@ -118,7 +130,7 @@ if test "$enable_shared" = yes; then
         LDFLAGS="$LDFLAGS -Wl,-Bsymbolic"
         TEST_FFMPEG([bsymbolic])
         if test "$bsymbolic" = "yes"; then
-            src_core_libffms2_la_LDFLAGS="$src_core_libffms2_la_LDFLAGS -Wl-Bsymbolic"
+            src_core_libffms2_la_LDFLAGS="$src_core_libffms2_la_LDFLAGS -Wl,-Bsymbolic"
         else
             AC_MSG_RESULT($bsymbolic)
             AC_MSG_FAILURE([cannot build ffms2 as a shared library])

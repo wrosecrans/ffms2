@@ -11,8 +11,6 @@ If you are religious you may consider this the second coming.
 Donate if you like this software.
 Collecting weird clips from the internet and making them play takes more time than you'd think.
 
-[![Donate](https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=fredrik%2emellbin%40gmail%2ecom&lc=US&item_name=IVTC%2eORG&no_note=0&currency_code=USD&bn=PP%2dDonationsBF%3abtn_donate_LG%2egif%3aNonHostedGuest)
-
 ## Limitations
 
  - Because of LAVF's demuxer, most raw streams (such as elementary h264 and other mpeg video streams) will fail to work properly.
@@ -65,7 +63,7 @@ If you want a progress report on the indexing, you can use the supplied `ffmsind
 ### FFIndex
 ```
 FFIndex(string source, string cachefile = source + ".ffindex", int indexmask = -1,
-    int errorhandling = 3, bool overwrite = false)
+    int errorhandling = 3, bool overwrite = false, bool enable_drefs = false, bool use_absolute_path = false)
 ```
 Indexes a number of tracks in a given source file and writes the index file to disk, where it can be picked up and used by `FFVideoSource` or `FFAudioSource`.
 Normally you do not need to call this function manually; it's invoked automatically if necessary by `FFVideoSource`/`FFAudioSource`.
@@ -106,11 +104,17 @@ Possible values are:
 If set to true, `FFIndex()` will reindex the source file and overwrite the index file even if the index file already exists and is valid.
 Mostly useful for trackmask changes and testing.
 
+##### bint enable_drefs = False
+Corresponds to the FFmpeg demuxer option of the same name. You will know if you need it.
+
+##### bint use_absolute_path = False
+Corresponds to the FFmpeg demuxer option of the same name. You will know if you need it.
+
 ### FFVideoSource
 ```
 FFVideoSource(string source, int track = -1, bool cache = true,
     string cachefile = source + ".ffindex", int fpsnum = -1, int fpsden = 1,
-    int threads = -1, string timecodes = "", int seekmode = 1, int rffmode = 0,
+    int threads = -1, string timecodes = "", int seekmode = 1,
     int width = -1, int height = -1, string resizer = "BICUBIC",
     string colorspace = "", string varprefix = "")
 ```
@@ -167,21 +171,6 @@ Valid modes are:
  - **2**: Unsafe normal. Same as mode 1, but no error will be thrown if the exact seek destination has to be guessed.
  - **3**: Aggressive. Seeks in the forward direction even if no closer keyframe is known to exist. Only useful for testing and containers where libavformat doesn't report keyframes properly.
 
-##### int rffmode = 0
-Controls how RFF flags in the video stream are treated; in other words it's equivalent to the "field operation" mode switch in DVD2AVI/DGIndex.
-Valid modes are:
-
- - **0**: Ignore all flags (the default mode).
- - **1**: Honor all pulldown flags.
- - **2**: Equivalent to DVD2AVI's "force film" mode.
-
-Note that using modes 1 or 2 will make `FFVideoSource` throw an error if the video stream has no RFF flags at all.
-When using either of those modes, it will also make the output be assumed as CFR, disallow vertical scaling and disallow setting the output colorspace.
-`FFPICT_TYPE` will also not be set as the output is a combination of several frames.
-Other subtle behavior changes may also exist.
-
-Also note that "force film" is mostly useless and only here for completeness' sake, since if your source really is safe to force film on, using mode 0 will have the exact same effect while being considerably more efficient.
-
 ##### int width = -1, int height = -1
 Sets the resolution of the output video, in pixels.
 Setting either dimension to less than or equal to zero means the resolution of the first decoded video frame is used for that dimension.
@@ -208,13 +197,14 @@ For convenience the last used FFMS function in a script sets the global variable
 ```
 FFAudioSource(string source, int track = -1, bool cache = true,
     string cachefile = source + ".ffindex", int adjustdelay = -1,
+    int fillgaps = -1, float drc_scale = 0,
 string varprefix = "")
 ```
 Opens audio.
 Invokes indexing of all tracks if no valid index file is found, or if the requested track isn't present in the index.
 
 #### Arguments
-Are exactly the same as to `FFVideoSource`, with one exception:
+Are exactly the same as to `FFVideoSource`, but with these additional options:
 
 ##### int adjustdelay = -1
 Controls how audio delay is handled, i.e. what happens if the first audio sample in the file doesn't have a timestamp of zero.
@@ -229,13 +219,22 @@ The following arguments are valid:
 -2 obviously does the same thing as -1 if the first video frame of the first video track starts at time zero.
 In some containers this will always be the case, in others (most notably 188-byte MPEG TS) it will almost never happen.
 
+##### int fillgaps = -1
+Determines how audio with discontinuous timestamps are handled. 
+ - **-1**: Apply zero filled gaps to audio in containers where it's usually necessary.
+ - **0**: Never zero fill gaps.
+ - **1**: Always zero fill gaps.
+ 
+##### float drc_scale = 0
+Controls the amount of DRC that's applied to (E)AC-3 audio. 0 means no DRC and 1 means fully applied DRC in accordance with how it's flagged in the stream.
+ 
 ### FFmpegSource2/FFMS2
 ```
 FFmpegSource2/FFMS2(string source, int vtrack = -1, int atrack = -2, bool cache = true,
     string cachefile = source + ".ffindex", int fpsnum = -1, int fpsden = 1,
     int threads = -1, string timecodes = "", int seekmode = 1,
     bool overwrite = false, int width = -1, int height = -1,
-    string resizer = "BICUBIC", string colorspace = "", int rffmode = 0,
+    string resizer = "BICUBIC", string colorspace = "",
     int adjustdelay = -1, string varprefix = "")
 ```
 A convenience function that combines the functionality of `FFVideoSource` and `FFAudioSource`.
@@ -363,7 +362,6 @@ Note that using the width/height/colorspace parameters to FFVideoSource may unde
 ##### FFPICT_TYPE
 The picture type of the most recently requested frame as the ASCII number of the character listed below.
 Use `Chr()` to convert it to an actual letter in Avisynth. Use after_frame=true in Avisynth's conditional scripting for proper results.
-Only set when rffmode=0.
 The FFmpeg source definition of the characters:
 ```
 I: Intra
@@ -378,7 +376,7 @@ b: FF_BI_TYPE (no good explanation available)
 
 ##### FFVFR_TIME
 The actual time of the source frame in milliseconds.
-Only set when no type of CFR conversion is being done (`rffmode` and `fpsnum` left at their defaults).
+Only set when no type of CFR conversion is being done (`fpsnum` and `fpsden` left at their defaults).
 
 ##### FFCHANNEL_LAYOUT
 The audio channel layout of the audio stream.

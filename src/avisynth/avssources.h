@@ -22,7 +22,9 @@
 #define FFAVSSOURCES_H
 
 #include <vector>
+#ifdef _WIN32
 #include <windows.h>
+#endif
 #include <avisynth.h>
 #include "ffms.h"
 
@@ -35,19 +37,13 @@ struct ErrorInfo : FFMS_ErrorInfo {
 };
 
 class AvisynthVideoSource : public IClip {
-    struct FrameFields {
-        int Top;
-        int Bottom;
-    };
-
     VideoInfo VI;
     bool HighBitDepth;
     FFMS_VideoSource *V;
-    int FPSNum;
-    int FPSDen;
-    int RFFMode;
-    std::vector<FrameFields> FieldList;
+    int64_t FPSNum;
+    int64_t FPSDen;
     const char *VarPrefix;
+    bool has_at_least_v8;
 
     void InitOutputFormat(int ResizeToWidth, int ResizeToHeight,
         const char *ResizerName, const char *ConvertToFormatName, IScriptEnvironment *Env);
@@ -55,14 +51,14 @@ class AvisynthVideoSource : public IClip {
     void OutputField(const FFMS_Frame *Frame, PVideoFrame &Dst, int Field, IScriptEnvironment *Env);
 public:
     AvisynthVideoSource(const char *SourceFile, int Track, FFMS_Index *Index,
-        int FPSNum, int FPSDen, int Threads, int SeekMode, int RFFMode,
+        int FPSNum, int FPSDen, int Threads, int SeekMode,
         int ResizeToWidth, int ResizeToHeight, const char *ResizerName,
         const char *ConvertToFormatName, const char *VarPrefix, IScriptEnvironment* Env);
     ~AvisynthVideoSource();
     bool __stdcall GetParity(int n);
     int __stdcall SetCacheHints(int cachehints, int frame_range) { return 0; }
     const VideoInfo& __stdcall GetVideoInfo() { return VI; }
-    void __stdcall GetAudio(void* Buf, __int64 Start, __int64 Count, IScriptEnvironment *Env) {}
+    void __stdcall GetAudio(void* Buf, int64_t Start, int64_t Count, IScriptEnvironment *Env) {}
     PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment *Env);
 };
 
@@ -71,12 +67,12 @@ class AvisynthAudioSource : public IClip {
     FFMS_AudioSource *A;
 public:
     AvisynthAudioSource(const char *SourceFile, int Track, FFMS_Index *Index,
-        int AdjustDelay, const char *VarPrefix, IScriptEnvironment* Env);
+        int AdjustDelay, int FillGaps, double DrcScale, const char *VarPrefix, IScriptEnvironment* Env);
     ~AvisynthAudioSource();
     bool __stdcall GetParity(int n) { return false; }
     int __stdcall SetCacheHints(int cachehints, int frame_range) { return 0; }
     const VideoInfo& __stdcall GetVideoInfo() { return VI; }
-    void __stdcall GetAudio(void* Buf, __int64 Start, __int64 Count, IScriptEnvironment *Env);
+    void __stdcall GetAudio(void* Buf, int64_t Start, int64_t Count, IScriptEnvironment *Env);
     PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment *Env) { return nullptr; };
 };
 
